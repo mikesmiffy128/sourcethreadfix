@@ -97,9 +97,7 @@ _Noreturn void __stdcall WinMainCRTStartup(void) {
 	if (!k32) die(100, L"Couldn't get kernel32 module; everything is on fire!");
 	void *lladdr = (void *)GetProcAddress(k32, "LoadLibraryW");
 	int namebytes = (namelen + 1) * sizeof(*name);
-	int rsize = sizeof("ThreadFixEntryPoint");
-	if (namebytes > rsize) rsize = namebytes;
-	void *rmem = VirtualAllocEx(info.hProcess, 0, rsize,
+	void *rmem = VirtualAllocEx(info.hProcess, 0, namebytes,
 			MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 	if (!rmem) {
 		TerminateProcess(info.hProcess, -1);
@@ -114,7 +112,7 @@ _Noreturn void __stdcall WinMainCRTStartup(void) {
 	}
 	// injectentry will be at the same offset, just a different base
 	void *rfunc = (char *)rdll + ((char *)&injectedentry - (char *)&__ImageBase);
-	VirtualFreeEx(info.hProcess, rmem, rsize, MEM_RELEASE);
+	VirtualFreeEx(info.hProcess, rmem, namebytes, MEM_RELEASE);
 	// Fill out the "fake IAT" table and use WPM to copy it to the injected side
 	// of things. See fakeiat.h for more exposition.
 #define PUTIAT(f) IAT.f = (_iat_##f##_func)GetProcAddress(k32, #f)
@@ -122,14 +120,6 @@ _Noreturn void __stdcall WinMainCRTStartup(void) {
 	PUTIAT(FlushInstructionCache);
 	PUTIAT(VirtualProtect);
 #undef PUTIAT
-	IAT.GetSystemInfo = (_iat_GetSystemInfo_func)GetProcAddress(
-			k32, "GetSystemInfo");
-	IAT.FlushInstructionCache = (_iat_FlushInstructionCache_func)GetProcAddress(
-			k32, "FlushInstructionCache");
-	IAT.VirtualProtect = (_iat_VirtualProtect_func)GetProcAddress(
-			k32, "VirtualProtect");
-	IAT.FlushInstructionCache = &FlushInstructionCache;
-	IAT.VirtualProtect = &VirtualProtect;
 	void *riat = (char *)rdll + ((char *)&IAT - (char *)&__ImageBase);
 	WriteProcessMemory(info.hProcess, riat, &IAT, sizeof(IAT), 0);
 	if (!rpc(info.hProcess, rfunc, 0,
