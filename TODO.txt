@@ -1,0 +1,3 @@
+* -DWIN32_LEAN_AND_MEAN -DNOMINMAX -DWINCRT_NO_FLTUSED, remove #defines
+* move into sst, reuse intdefs and x86, add #ifndef WINCRT_NO_FLTUSED to wincrt.c
+* figure out distribution???

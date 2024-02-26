@@ -1,0 +1,33 @@
+/* This file is dedicated to the public domain. */
+
+#include "version.h"
+
+#define EN_GB 0x809
+
+1 VERSIONINFO
+FILEVERSION VERSION_MAJOR,VERSION_MINOR,0,0
+PRODUCTVERSION VERSION_MAJOR,VERSION_MINOR,0,0
+FILEFLAGSMASK 0x17L
+FILEFLAGS 0
+FILEOS 4
+
+BEGIN
+	BLOCK "StringFileInfo"
+	BEGIN
+		BLOCK "080904b0"
+		BEGIN
+			VALUE "FileDescription", "High thread count fix wrapper for Source"
+			VALUE "FileVersion", VERSION
+			VALUE "InternalName", "Source Thread Fix"
+			VALUE "LegalCopyright", "Michael Smith 2024; ISC licence"
+			VALUE "ProductName", "Source Thread Fix"
+			VALUE "ProductVersion", VERSION
+		END
+	END
+	BLOCK "VarFileInfo"
+	BEGIN
+		VALUE "Translation", EN_GB, 1200
+	END
+END
+
+// vi: sw=4 ts=4 noet tw=80 cc=80

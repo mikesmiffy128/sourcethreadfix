@@ -1,0 +1,48 @@
+══════ Source Thread Fix ══════
+
+This builds a wrapper executable to fix a bug present in old versions of various
+Source games wherein having too many CPU threads available will cause a crash.
+
+It supports Windows only; I don’t know whether this is also an issue on any
+Linux game build but I’ll cross that bridge if anyone ever reports a problem.
+This tool was originally created because some Left 4 Dead 2 runners have
+high-end Ryzens and such with very high core counts, and were essentially unable
+to play without a fix.
+
+NOTE: Please read and understand LICENCE before redistributing this software!
+
+════ Compiling ════
+
+• Install the Windows 10 SDK and MSVC toolset via the Visual Studio Installer
+  (if you don’t care what else gets installed, installing the C++ Desktop
+  workload should be fine).
+• Install native Clang from https://clang.llvm.org (NOT MinGW/MSYS2 Clang!).
+• Run compile.bat.
+
+You might be able to use MSVC instead of Clang for this but I didn’t bother
+trying to find out.
+
+════ Usage ════
+
+The default build output is hl2.wrap.exe, which will wrap a neighbouring
+hl2.exe. In the likely event that your game binary has a different name, just
+match that; for example call it left4dead2.wrap.exe to wrap Left 4 Dead 2.
+
+Then, in whatever script or shortcut you use to invoke your game binary, simply
+invoke the wrapper instead. It will automatically find the original binary
+beside itself and start it up with the necessary hook in place to fix the bug.
+
+IMPORTANT: The wrapper forcibly passes -insecure to every game it wraps, to
+reduce the risk of a VAC ban. Even then, do NOT join any servers that were not
+also started in insecure mode, or (particularly with older game versions) you
+might still be at risk of getting banned even with -insecure set on your end.
+YOU HAVE BEEN WARNED!
+
+Lastly, note that if you don’t have more than 24 threads, this thing won’t
+exactly do anything useful, so if you’re bundling this into an old version of
+a game for speedrunning or other purposes, consider having the launch script
+first check the core count and bypass this if it’s unnecessary. It doesn’t
+really matter a huge deal, but you might as well.
+
+Thanks, and have fun!
+- Michael Smith <mikesmiffy128@gmail.com>
