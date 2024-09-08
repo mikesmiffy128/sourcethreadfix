@@ -1,5 +1,5 @@
 /*
- * Copyright © 2023 Michael Smith <mikesmiffy128@gmail.com>
+ * Copyright © 2024 Michael Smith <mikesmiffy128@gmail.com>
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -25,6 +25,9 @@
  */
 
 // XXX: no BOUND (0x62): ambiguous with EVEX prefix - can't be arsed!
+// XXX: no LES (0xC4) or DES (0xC5) either for similar reasons. better to report
+// an unknown instruction than to potentially misinterpret an AVX thing.
+// these are all legacy instructions that won't really be used much anyway.
 
 /* Instruction prefixes: segments */
 #define X86_SEG_PREFIXES(X) \
@@ -124,7 +127,6 @@
 	X(X86_INT3,       0xCC) \
 	X(X86_INTO,       0xCE) \
 	X(X86_XLAT,       0xD7) \
-	X(X86_JMPI8,      0xEB) \
 	X(X86_CMC,        0xF5) \
 	X(X86_CLC,        0xF8) \
 	X(X86_STC,        0xF9) \
@@ -144,8 +146,6 @@
 	X(X86_XORALI,  0x34) \
 	X(X86_CMPALI,  0x3C) \
 	X(X86_PUSHI8,  0x6A) \
-	X(X86_MOVALII, 0xA0) /* From offset (indirect) */ \
-	X(X86_MOVIIAL, 0xA2) /* To offset (indirect) */ \
 	X(X86_TESTALI, 0xA8) \
 	X(X86_JO,      0x70) \
 	X(X86_JNO,     0x71) \
@@ -177,7 +177,8 @@
 	X(X86_LOOPNZ,  0xE0) /* AKA LOOPNE */ \
 	X(X86_LOOPZ,   0xE1) /* AKA LOOPE */ \
 	X(X86_LOOP,    0xE2) \
-	X(X86_JCXZ,    0xE3)
+	X(X86_JCXZ,    0xE3) \
+	X(X86_JMPI8,   0xEB)
 
 /* Single-byte opcodes with a word-sized immediate operand */
 #define X86_OPS_1BYTE_IW(X) \
@@ -190,8 +191,6 @@
 	X(X86_XOREAXI,  0x35) \
 	X(X86_CMPEAXI,  0x3D) \
 	X(X86_PUSHIW,   0x68) \
-	X(X86_MOVEAXII, 0xA1) /* From offset (indirect) */ \
-	X(X86_MOVIIEAX, 0xA3) /* To offset (indirect) */ \
 	X(X86_TESTEAXI, 0xA9) \
 	X(X86_MOVEAXI,  0xB8) \
 	X(X86_MOVECXI,  0xB9) \
@@ -203,6 +202,13 @@
 	X(X86_MOVEDII,  0xBF) \
 	X(X86_CALL,     0xE8) \
 	X(X86_JMPIW,    0xE9)
+
+/* Single-byte opcodes with a word-sized immediate operand (indirect) */
+#define X86_OPS_1BYTE_IWI(X) \
+	X(X86_MOVALII,  0xA0) /* From offset (indirect) */ \
+	X(X86_MOVEAXII, 0xA1) /* From offset (indirect) */ \
+	X(X86_MOVIIAL,  0xA2) /* To offset (indirect) */ \
+	X(X86_MOVIIEAX, 0xA3) /* To offset (indirect) */ \
 
 /* Single-byte opcodes with 16-bit immediate operands, regardless of prefixes */
 #define X86_OPS_1BYTE_I16(X) \
@@ -259,8 +265,6 @@
 	X(X86_LEA,       0x8D) \
 	X(X86_MOVSM,     0x8E) /* Store 4 bytes to segment register */ \
 	X(X86_POPM,      0x8F) \
-	X(X86_LES,       0xC4) \
-	X(X86_LDS,       0xC5) \
 	X(X86_SHIFTM18,  0xD0) /* Shift/roll by 1 place */ \
 	X(X86_SHIFTM1W,  0xD1) /* Shift/roll by 1 place */ \
 	X(X86_SHIFTMCL8, 0xD2) /* Shift/roll by CL places */ \
@@ -297,6 +301,7 @@
 	X86_OPS_1BYTE_NO(X) \
 	X86_OPS_1BYTE_I8(X) \
 	X86_OPS_1BYTE_IW(X) \
+	X86_OPS_1BYTE_IWI(X) \
 	X86_OPS_1BYTE_I16(X) \
 	X86_OPS_1BYTE_MRM(X) \
 	X86_OPS_1BYTE_MRM_I8(X) \

@@ -1,5 +1,5 @@
 /*
- * Copyright © 2023 Michael Smith <mikesmiffy128@gmail.com>
+ * Copyright © 2024 Michael Smith <mikesmiffy128@gmail.com>
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -40,7 +40,7 @@ static int mrmsib(const uchar *p, int addrlen) {
 			case 0x80: return 1 + addrlen + sib;
 		}
 	}
-	if (addrlen == 2 && *p == 0x26) return 3;
+	if (addrlen == 2 && (*p & 0xC7) == 0x06) return 3;
 	return 1; // note: include the mrm itself in the byte count
 }
 
@@ -65,6 +65,7 @@ P:		X86_SEG_PREFIXES(CASES)
 		X86_OPS_1BYTE_NO(CASES) return pfxlen + 1;
 		X86_OPS_1BYTE_I8(CASES) operandlen = 1;
 		X86_OPS_1BYTE_IW(CASES) return pfxlen + 1 + operandlen;
+		X86_OPS_1BYTE_IWI(CASES) return pfxlen + 1 + addrlen;
 		X86_OPS_1BYTE_I16(CASES) return pfxlen + 3;
 		X86_OPS_1BYTE_MRM(CASES) return pfxlen + 1 + mrmsib(insn + 1, addrlen);
 		X86_OPS_1BYTE_MRM_I8(CASES) operandlen = 1;
