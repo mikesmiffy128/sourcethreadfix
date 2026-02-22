@@ -56,18 +56,21 @@ _Noreturn void __stdcall WinMainCRTStartup(void) {
 	ushort cmdline[32678];
 	ushort *myargs = GetCommandLineW();
 	bool quote = false, oddslash = false;
-	for (;; ++myargs) {
-		if (*myargs == '\0') die(1, L"Unexpected end of command line");
+	for (; *myargs; ++myargs) {
 		if (*myargs == '\\') {
 			oddslash = !oddslash;
 		}
 		else {
-			if (*myargs == '"') { if (!oddslash) quote = !quote; }
-			else if ((*myargs == ' ' || *myargs == '\t') && !quote) break;
+			if (*myargs == '"') {
+				if (!oddslash) quote = !quote;
+			}
+			else if ((*myargs == ' ' || *myargs == '\t') && !quote) {
+				while (*++myargs == ' ' || *myargs == '\t');
+				break;
+			}
 			oddslash = false;
 		}
 	}
-	while (*++myargs == ' ' || *myargs == '\t');
 	if (len(myargs) > 32767 - MAX_PATH - sizeof("\"\"-steam -insecure ") - 1) {
 		die(1, L"Command line is too long");
 	}
