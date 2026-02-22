@@ -20,18 +20,54 @@
 #include "intdefs.h"
 #include "x86.h"
 
+#if defined(__clang__)
+#define cold __attribute__((cold, noinline))
+#define forceinline __attribute__((always_inline))
+#elif defined(_MSC_VER)
+#define cold __declspec(noinline)
+#define forceinline __forceinline
+#else
+#define cold
+#endif
+
 static int len(const ushort *s) {
 	int i = 0;
 	for (; *s; ++s) ++i;
 	return i;
 }
 
-#if defined(__clang__)
-#define cold __attribute__((cold, noinline))
-#elif defined(_MSC_VER)
-#define cold __declspec(noinline)
+// duped from sst mem.h
+static forceinline int mem_cmp(const void *restrict x, const void *restrict y,
+		unsigned int sz) {
+#ifdef __clang__
+	int a, b;
+	__asm volatile (
+		"xor eax, eax\n"
+		"repz cmpsb\n"
+		: "+D" (x), "+S" (y), "+c" (sz), "=@cca"(a), "=@ccb"(b)
+		:
+		: "ax", "memory"
+	);
+	return b - a;
+#else // no msvc intrinsic for this apparently
+	const char *x = x_, *y = y_;
+	for (unsigned int i = 0; i < sz; ++i) {
+		if (x[i] > y[i]) return 1;
+		if (x[i] < y[i]) return -1;
+	}
+	return 0;
+#endif
+}
+
+#ifdef __clang__
+#define mem_copy_fixed __builtin_memcpy_inline
 #else
-#define cold
+// *terrible* fallback; should really be using Clang anyway.
+static inline void mem_copy_fixed(char *restrict x, const char *restrict y,
+		unsigned int sz) {
+	char *restrict xb = x; const char *restrict yb = y;
+	for (unsigned int i = 0; i < sz; ++i) xb[i] = yb[i];
+}
 #endif
 
 static cold _Noreturn void diex(int status, const ushort *message) {
@@ -47,8 +83,10 @@ static cold _Noreturn void _die(int status, ushort *message, int fmtoff) {
 	diex(status, message); \
 }
 #define die(status, message) do { \
-	ushort _buf[512] = message L": "; \
-	_die(status, _buf, (sizeof(message L": ") - 2) / 2); \
+	ushort _buf[512]; \
+	enum { _msgsz = (sizeof(message L": ") - 2) / 2 }; \
+	mem_copy_fixed(_buf, message L": ", _msgsz * 2); /* bleh */ \
+	_die(status, _buf, _msgsz); \
 } while (0)
 
 // IMPORTANT: I have lazily hardcoded offsets into this; change with caution!
@@ -151,7 +189,7 @@ _Noreturn void __stdcall WinMainCRTStartup(void) {
 	}
 	int namelen = GetModuleFileNameW(0, name, MAX_PATH);
 	if (namelen < sizeof("x.wrap.exe") - 1 ||
-			memcmp(name + namelen - 9, L".wrap.exe", 18)) {
+			mem_cmp(name + namelen - 9, L".wrap.exe", 18)) {
 		diex(2, L"Wrapper name must end in .wrap.exe");
 	}
 	cmdline[0] = L'"';
@@ -159,8 +197,8 @@ _Noreturn void __stdcall WinMainCRTStartup(void) {
 	for (; i < namelen - 9; ++i) {
 		cmdline[i + 1] = name[i]; // XXX: assuming no quotes etc. prolly fine?
 	}
-	memcpy(name + i, L".exe", 5 * sizeof(*name)); // get rid of the .wrap part
-	memcpy(cmdline + i + 1, L".exe\" -insecure ", 16 * sizeof(*cmdline));
+	mem_copy_fixed(name + i, L".exe", 5 * sizeof(*name)); // get rid of ".wrap"
+	mem_copy_fixed(cmdline + i + 1, L".exe\" -insecure ", 16 * sizeof(*cmdline));
 	const ushort *p = myargs; ushort *q = cmdline + i + 17;
 	while (*q++ = *p++);
 	PROCESS_INFORMATION info;
