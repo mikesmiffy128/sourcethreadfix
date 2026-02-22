@@ -71,7 +71,7 @@ _Noreturn void __stdcall WinMainCRTStartup(void) {
 			oddslash = false;
 		}
 	}
-	if (len(myargs) > 32767 - MAX_PATH - sizeof("\"\"-steam -insecure ") - 1) {
+	if (len(myargs) > 32767 - MAX_PATH - sizeof("\"\"-insecure ") - 1) {
 		die(1, L"Command line is too long");
 	}
 	int namelen = GetModuleFileNameW(0, name, MAX_PATH);
@@ -86,8 +86,8 @@ _Noreturn void __stdcall WinMainCRTStartup(void) {
 		cmdline[i + 1] = name[i]; // XXX: assuming no quotes etc. prolly fine?
 	}
 	memcpy(origname + i, L".exe", 4 * sizeof(*origname));
-	memcpy(cmdline + i + 1, L".exe\" -steam -insecure ", 23 * sizeof(*cmdline));
-	const ushort *p = myargs; ushort *q = cmdline + i + 24;
+	memcpy(cmdline + i + 1, L".exe\" -insecure ", 16 * sizeof(*cmdline));
+	const ushort *p = myargs; ushort *q = cmdline + i + 17;
 	do *q++ = *p; while (*p++);
 	PROCESS_INFORMATION info;
 	STARTUPINFOW startinfo = {.cb = sizeof(startinfo)};
