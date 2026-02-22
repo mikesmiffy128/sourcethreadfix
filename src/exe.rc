@@ -19,7 +19,7 @@ BEGIN
 			VALUE "FileDescription", "High thread count fix wrapper for Source"
 			VALUE "FileVersion", VERSION
 			VALUE "InternalName", "Source Thread Fix"
-			VALUE "LegalCopyright", "Michael Smith 2024; ISC licence"
+			VALUE "LegalCopyright", "Michael Smith, ISC licence"
 			VALUE "ProductName", "Source Thread Fix"
 			VALUE "ProductVersion", VERSION
 		END
