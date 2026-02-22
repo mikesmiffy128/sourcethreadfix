@@ -17,12 +17,8 @@
 #include <stdbool.h>
 #include <Windows.h>
 
-#include "fakeiat.h"
 #include "intdefs.h"
-
-extern struct HINSTANCE__ __ImageBase;
-
-struct _fakeiat IAT;
+#include "x86.h"
 
 static int len(const ushort *s) {
 	int i = 0;
@@ -30,29 +26,108 @@ static int len(const ushort *s) {
 	return i;
 }
 
-static _Noreturn void die(int status, const ushort *message) {
-	MessageBoxW(0, message, L"Thread fix wrapper error", 0);
-	ExitProcess(status);
+#if defined(__clang__)
+#define cold __attribute__((cold, noinline))
+#elif defined(_MSC_VER)
+#define cold __declspec(noinline)
+#else
+#define cold
+#endif
+
+static cold _Noreturn void diex(int status, const ushort *message) {
+	MessageBoxW(0, message, L"Source Thread Fix wrapper error", 0);
+	TerminateProcess((void *)-1, status);
+	__assume(0);
 }
 
-__declspec(noinline) int __stdcall injectedentry(int unused); // injected.c
+static cold _Noreturn void _die(int status, ushort *message, int fmtoff) {
+	FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM, 0, GetLastError(), \
+			MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), message + fmtoff,
+			512 - fmtoff, 0); \
+	diex(status, message); \
+}
+#define die(status, message) do { \
+	ushort _buf[512] = message L": "; \
+	_die(status, _buf, (sizeof(message L": ") - 2) / 2); \
+} while (0)
 
-static void *rpc(void *proc, void *rfunc, void *rparam, const ushort *errstr) {
-	void *rthread = CreateRemoteThread(proc, 0, 32768,
-			(LPTHREAD_START_ROUTINE)rfunc, rparam, 0, 0);
-	if (!rthread) {
-		TerminateProcess(proc, -1);
-		die(100, errstr);
+// IMPORTANT: I have lazily hardcoded offsets into this; change with caution!
+static const uchar asminsns[] = {
+	// Signature: ulong __stdcall hookdest_NtQuerySystemInformation(int class,
+	//         void *info, ulong infolen, ulong *retlen)
+	X86_PUSHEBP,				// push ebp
+	X86_MOVMRW, 0xE5,			// mov ebp, esp
+	X86_PUSHEDI,				// push edi
+	X86_PUSHESI,				// push esi
+	X86_MOVRMW, 0x75, 12,		// mov esi, dword ptr [ebp + 12]
+	X86_MOVRMW, 0x7D, 8,		// mov edi, dword ptr [ebp + 8]
+	X86_MISCMW, 0x75, 20,		// push dword ptr [ebp + 20]
+	X86_MISCMW, 0x75, 16,		// push dword ptr [ebp + 16]
+	X86_PUSHESI,				// push esi
+	X86_PUSHEDI,				// push edi
+	// eax = trampoline(class, info, infolen, retlen);
+	X86_CALL, 20, 0, 0, 0,		// call +20 (trampoline)
+	// if (c != SystemBasicInformation) return eax; // (c != 0)
+	X86_TESTMRW, 0xFF,			// test edi edi
+	X86_JNZ, 10,				// jne +10 (branch)
+	// if (info->NumberOfProcessors > 24) info->NumberOfProcessors = 24;
+	X86_ALUMI8, 0x7E, 40, 25,	// cmp byte ptr [esi + 40], 25
+	X86_JL, 4,					// jl +4, (branch)
+	X86_MOVMI8, 0x46, 40, 24,	// mov byte ptr [esi + 40], 24
+	// branch:
+	X86_POPESI,					// pop esi
+	X86_POPEDI,					// pop edi
+	X86_POPEBP,					// pop ebp
+	X86_RETI16, 16, 0			// ret 16
+	// trampoline:
+	// (space in mapped page after insns)
+};
+
+static void readmem(void *proc, void *raddr, void *out, int n) {
+	ulong nread;
+	if (!ReadProcessMemory(proc, raddr, out, n, &nread)) {
+		die(100, L"Couldn't read subprocess memory");
 	}
-	WaitForSingleObject(rthread, INFINITE);
-	void *ret;
-	GetExitCodeThread(rthread, (ulong *)&ret);
-	return ret;
 }
 
-// main EXE entry point. this seems not to get called when we're LoadLibrary'd!
+static inline void rhook(void *proc, void *rtrampoline, void *rfunc,
+		void *rtarget) {
+	uchar trampoline[24];
+	for (;;) {
+		readmem(proc, rfunc, trampoline, 19);
+		if (trampoline[0] != X86_JMPIW) break;
+		s32 off = *(s32 *)(trampoline + 1);
+		rfunc = (char *)rfunc + off + 5;
+	}
+	int len = 0;
+	for (;;) {
+		if (trampoline[len] == X86_CALL) {
+			TerminateProcess(proc, 0); // XXX: annoying dupes
+			diex(100, L"Unexpected call instruction in hooked function");
+		}
+		int ilen = x86_len(trampoline + len);
+		if (ilen == -1) {
+			TerminateProcess(proc, -1); // "
+			diex(100, L"Unknown or invalid instruction in hooked function");
+		}
+		len += ilen;
+		if (len >= 5) break;
+		if (trampoline[len] == X86_JMPIW) {
+			TerminateProcess(proc, -1); // "
+			diex(100, L"Unexpected jump instruction in hooked function");
+		}
+	}
+	unsigned char jmp[5];
+	jmp[0] = X86_JMPIW;
+	*(s32 *)(jmp + 1) = (char *)rtarget - (char *)rfunc - 5;
+	WriteProcessMemory(proc, rfunc, jmp, sizeof(jmp), 0);
+	trampoline[len] = X86_JMPIW;
+	*(s32 *)(trampoline + len + 1) = (char *)rfunc - (char *)rtrampoline - 5;
+	WriteProcessMemory(proc, rtrampoline, trampoline, len + 5, 0);
+}
+
 _Noreturn void __stdcall WinMainCRTStartup(void) {
-	ushort name[MAX_PATH], origname[MAX_PATH];
+	ushort name[MAX_PATH];
 	ushort cmdline[32678];
 	ushort *myargs = GetCommandLineW();
 	bool quote = false, oddslash = false;
@@ -71,68 +146,51 @@ _Noreturn void __stdcall WinMainCRTStartup(void) {
 			oddslash = false;
 		}
 	}
-	if (len(myargs) > 32767 - MAX_PATH - sizeof("\"\"-insecure ") - 1) {
-		die(1, L"Command line is too long");
+	if (len(myargs) > 32767 - MAX_PATH - (sizeof("\"\"-insecure ") - 1)) {
+		diex(1, L"Command line is too long");
 	}
 	int namelen = GetModuleFileNameW(0, name, MAX_PATH);
 	if (namelen < sizeof("x.wrap.exe") - 1 ||
-			memcmp(name + namelen - 9, L".wrap.exe", 9)) {
-		die(2, L"Wrapper name must end in .wrap.exe");
+			memcmp(name + namelen - 9, L".wrap.exe", 18)) {
+		diex(2, L"Wrapper name must end in .wrap.exe");
 	}
 	cmdline[0] = L'"';
 	int i = 0;
 	for (; i < namelen - 9; ++i) {
-		origname[i] = name[i];
 		cmdline[i + 1] = name[i]; // XXX: assuming no quotes etc. prolly fine?
 	}
-	memcpy(origname + i, L".exe", 4 * sizeof(*origname));
+	memcpy(name + i, L".exe", 5 * sizeof(*name)); // get rid of the .wrap part
 	memcpy(cmdline + i + 1, L".exe\" -insecure ", 16 * sizeof(*cmdline));
 	const ushort *p = myargs; ushort *q = cmdline + i + 17;
-	do *q++ = *p; while (*p++);
+	while (*q++ = *p++);
 	PROCESS_INFORMATION info;
 	STARTUPINFOW startinfo = {.cb = sizeof(startinfo)};
-	if (!CreateProcessW(origname, cmdline, 0, 0, 0, CREATE_SUSPENDED, 0, 0,
+	// avoid any possible thunky weirdness using GPA rather than &func
+	void *ntdll = GetModuleHandleW(L"ntdll.dll");
+	if (!ntdll) {
+		die(100, L"Couldn't get ntdll module; everything is on fire!");
+	}
+	void *qsiaddr = (void *)GetProcAddress(ntdll, "NtQuerySystemInformation");
+	if (!qsiaddr) diex(100, L"Couldn't find GetSystemInfo symbol");
+	if (!CreateProcessW(name, cmdline, 0, 0, 0, CREATE_SUSPENDED, 0, 0,
 			&startinfo, &info)) {
 		die(100, L"Couldn't start subprocess");
 	}
-	// avoid any possible thunky weirdness using GPA rather than &LoadLibraryW
-	void *k32 = GetModuleHandleW(L"kernel32.dll");
-	if (!k32) die(100, L"Couldn't get kernel32 module; everything is on fire!");
-	void *lladdr = (void *)GetProcAddress(k32, "LoadLibraryW");
-	int namebytes = (namelen + 1) * sizeof(*name);
-	void *rmem = VirtualAllocEx(info.hProcess, 0, namebytes,
-			MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+	void *rmem = VirtualAllocEx(info.hProcess, 0, 4096,
+			MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READ);
 	if (!rmem) {
 		TerminateProcess(info.hProcess, -1);
 		die(100, L"Couldn't allocate memory in subprocess");
 	}
-	WriteProcessMemory(info.hProcess, rmem, name, namebytes, 0);
-	void *rdll = rpc(info.hProcess, lladdr, rmem,
-			L"Couldn't call LoadLibrary in subprocess");
-	if (!rdll) {
-		TerminateProcess(info.hProcess, -1);
-		die(100, L"LoadLibrary call in subprocess returned an error");
-	}
-	// injectentry will be at the same offset, just a different base
-	void *rfunc = (char *)rdll + ((char *)&injectedentry - (char *)&__ImageBase);
-	VirtualFreeEx(info.hProcess, rmem, namebytes, MEM_RELEASE);
-	// Fill out the "fake IAT" table and use WPM to copy it to the injected side
-	// of things. See fakeiat.h for more exposition.
-#define PUTIAT(f) IAT.f = (_iat_##f##_func)GetProcAddress(k32, #f)
-	PUTIAT(GetSystemInfo);
-	PUTIAT(FlushInstructionCache);
-	PUTIAT(VirtualProtect);
-#undef PUTIAT
-	void *riat = (char *)rdll + ((char *)&IAT - (char *)&__ImageBase);
-	WriteProcessMemory(info.hProcess, riat, &IAT, sizeof(IAT), 0);
-	if (!rpc(info.hProcess, rfunc, 0,
-			L"Couldn't call injected entry point in subprocess")) {
-		die(100, L"Injected code failed to hook GetSystemInfo");
-	}
+	WriteProcessMemory(info.hProcess, rmem, asminsns, sizeof(asminsns), 0);
+	rhook(info.hProcess, (char *)rmem + sizeof(asminsns), qsiaddr, rmem);
 	ResumeThread(info.hThread);
 	CloseHandle(info.hThread);
 	WaitForSingleObject(info.hProcess, INFINITE);
 	ulong status;
 	GetExitCodeProcess(info.hProcess, &status);
-	ExitProcess(status);
+	TerminateProcess((void *)-1, status);
+	__assume(0);
 }
+
+// vi: sw=4 ts=4 noet tw=80 cc=80
