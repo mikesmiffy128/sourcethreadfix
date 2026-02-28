@@ -19,8 +19,8 @@ md TEMP-%name% || exit /B
 copy hl2.wrap.exe TEMP-%name%\hl2.wrap.exe || exit /B
 copy dist\LICENCE-threadfix TEMP-%name%\LICENCE-threadfix || exit /B
 :: using midnight on release day to make zip deterministic! change on next release!
-powershell (Get-Item TEMP-%name%\hl2.wrap.exe).LastWriteTime = new-object DateTime 2024, 2, 26, 0, 0, 0
-powershell (Get-Item TEMP-%name%\LICENCE-threadfix).LastWriteTime = new-object DateTime 2024, 2, 26, 0, 0, 0
+powershell (Get-Item TEMP-%name%\hl2.wrap.exe).LastWriteTime = new-object DateTime 2026, 2, 28, 0, 0, 0
+powershell (Get-Item TEMP-%name%\LICENCE-threadfix).LastWriteTime = new-object DateTime 2026, 2, 28, 0, 0, 0
 pushd TEMP-%name%
 "%SEVENZIP%" a -mtc=off %name%.zip hl2.wrap.exe LICENCE-threadfix || exit /B
 move %name%.zip ..\release\%name%.zip
